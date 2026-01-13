@@ -194,7 +194,7 @@ async function refreshYandexToken() {
     };
     
     // JWT oluştur
-    const signed = jwt.sign(payload, key.private_key, { algorithm: 'RS256', keyid: key.id });
+    const signed = jwt.sign(payload, key.private_key, { algorithm: 'PS256', keyid: key.id });
     console.log('🔍 JWT created, first 50 chars:', signed.substring(0, 50));
     
     // API isteği
@@ -522,3 +522,4 @@ app.listen(port, () => {
   console.log(`🚀 Server started on port ${port}`);
   logEvent('server_started', { port });
 });
+
