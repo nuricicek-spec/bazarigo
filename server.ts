@@ -178,13 +178,52 @@ let iamToken = '';
 let iamExpiresAt = 0;
 
 async function refreshYandexToken() {
-  console.log('🔍🔍 KEY PATH:', YANDEX_KEY_JSON_PATH);
+  console.log('🔍 KEY PATH:', YANDEX_KEY_JSON_PATH);
+  
   try {
-    await fs.access(YANDEX_KEY_JSON_PATH);
-    console.log('✅✅ KEY FILE EXISTS');
-  } catch {
-    console.log('❌❌ KEY FILE NOT FOUND');
+    const keyRaw = await fs.readFile(YANDEX_KEY_JSON_PATH, 'utf8');
+    const key = JSON.parse(keyRaw);
+    console.log('🔍 Service Account:', key.service_account_id);
+    
+    const nowSec = Math.floor(Date.now() / 1000);
+    const payload = {
+      aud: 'https://iam.api.cloud.yandex.net/iam/v1/tokens',
+      iss: key.service_account_id,
+      iat: nowSec,
+      exp: nowSec + 3600,
+    };
+    
+    // JWT oluştur
+    const signed = jwt.sign(payload, key.private_key, { algorithm: 'RS256', keyid: key.id });
+    console.log('🔍 JWT created, first 50 chars:', signed.substring(0, 50));
+    
+    // API isteği
+    console.log('🔍 Sending to Yandex API...');
+    const resp = await fetch('https://iam.api.cloud.yandex.net/iam/v1/tokens', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ jwt: signed }),
+    });
+    
+    console.log('🔍 API Status:', resp.status, resp.statusText);
+    const responseText = await resp.text();
+    console.log('🔍 API Response (first 300 chars):', responseText.substring(0, 300));
+    
+    if (!resp.ok) {
+      throw new Error(`Yandex API Error ${resp.status}: ${responseText}`);
+    }
+    
+    const data = JSON.parse(responseText);
+    iamToken = data.iamToken;
+    iamExpiresAt = new Date(data.expiresAt).getTime();
+    console.log('✅✅ Token received, expires:', data.expiresAt);
+    logEvent('yandex_iam_token_generated', { expiresAt: data.expiresAt });
+    
+  } catch (error) {
+    console.error('❌❌ FULL ERROR:', error);
+    throw error;
   }
+}
   const keyRaw = await fs.readFile(YANDEX_KEY_JSON_PATH, 'utf8');
   const key = JSON.parse(keyRaw);
   const nowSec = Math.floor(Date.now() / 1000);
@@ -504,4 +543,5 @@ app.listen(port, () => {
   console.log(`🚀 Server started on port ${port}`);
   logEvent('server_started', { port });
 });
+
 
