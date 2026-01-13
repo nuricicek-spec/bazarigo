@@ -212,3 +212,7 @@ async function refreshYandexToken() {
 async function getIamToken() {
   const now = Date.now();
   if (!iamToken || now > iamExpiresAt - 5 * 60 * 1000) {
+    await refreshYandexToken();
+  }
+  return iamToken;
+}
