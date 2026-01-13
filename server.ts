@@ -224,27 +224,6 @@ async function refreshYandexToken() {
     throw error;
   }
 }
-  const keyRaw = await fs.readFile(YANDEX_KEY_JSON_PATH, 'utf8');
-  const key = JSON.parse(keyRaw);
-  const nowSec = Math.floor(Date.now() / 1000);
-  const payload = {
-    aud: 'https://iam.api.cloud.yandex.net/iam/v1/tokens',
-    iss: key.service_account_id,
-    iat: nowSec,
-    exp: nowSec + 3600,
-  };
-  const signed = jwt.sign(payload, key.private_key, { algorithm: 'RS256', keyid: key.id });
-  const resp = await fetch('https://iam.api.cloud.yandex.net/iam/v1/tokens', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ jwt: signed }),
-  });
-  if (!resp.ok) throw new Error('yandex_token_failed');
-  const data = await resp.json() as any;
-  iamToken = data.iamToken;
-  iamExpiresAt = new Date(data.expiresAt).getTime();
-  logEvent('yandex_iam_token_generated', { expiresAt: data.expiresAt });
-}
 
 async function getIamToken() {
   const now = Date.now();
@@ -543,5 +522,3 @@ app.listen(port, () => {
   console.log(`🚀 Server started on port ${port}`);
   logEvent('server_started', { port });
 });
-
-
