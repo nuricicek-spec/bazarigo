@@ -178,6 +178,13 @@ let iamToken = '';
 let iamExpiresAt = 0;
 
 async function refreshYandexToken() {
+  console.log('🔍🔍 KEY PATH:', YANDEX_KEY_JSON_PATH);
+  try {
+    await fs.access(YANDEX_KEY_JSON_PATH);
+    console.log('✅✅ KEY FILE EXISTS');
+  } catch {
+    console.log('❌❌ KEY FILE NOT FOUND');
+  }
   const keyRaw = await fs.readFile(YANDEX_KEY_JSON_PATH, 'utf8');
   const key = JSON.parse(keyRaw);
   const nowSec = Math.floor(Date.now() / 1000);
@@ -497,3 +504,4 @@ app.listen(port, () => {
   console.log(`🚀 Server started on port ${port}`);
   logEvent('server_started', { port });
 });
+
