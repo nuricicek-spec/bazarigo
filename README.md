@@ -1,2 +1,2 @@
 # bazarigo
-BazariGo App
+BazariGo App Backend
