@@ -1,7 +1,7 @@
 {
   "name": "bazarigo-backend",
   "version": "1.0.0",
-  "description": "BazariGo production backend (Firestore + Cloudinary + Yandex Translate + Moderation)",
+  "description": "Bazarigo production backend",
   "main": "server.ts",
   "type": "module",
   "scripts": {
@@ -33,6 +33,4 @@
   "engines": {
     "node": ">=18.0.0"
   }
-
 }
-
