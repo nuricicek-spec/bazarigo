@@ -1,4 +1,3 @@
-// server.ts — Production backend
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
@@ -10,8 +9,8 @@ import fs from 'fs/promises';
 import jwt from 'jsonwebtoken';
 import admin from 'firebase-admin';
 import { v2 as cloudinary } from 'cloudinary';
+import { generateKeyPairSync } from 'crypto';
 
-// Firebase Admin
 const firebaseApp = admin.initializeApp({
   credential: admin.credential.cert({
     projectId: process.env.FIREBASE_PROJECT_ID!,
@@ -21,21 +20,18 @@ const firebaseApp = admin.initializeApp({
 });
 const db = admin.firestore();
 
-// Cloudinary
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME!,
   api_key: process.env.CLOUDINARY_API_KEY!,
   api_secret: process.env.CLOUDINARY_API_SECRET!,
 });
 
-// App setup
 const app = express();
 app.use(express.json({ limit: '1mb' }));
 app.use(cors());
 app.use(helmet({ crossOriginResourcePolicy: false }));
 app.use(morgan('combined'));
 
-// Config
 const HOSTING_BASE = process.env.HOSTING_BASE!;
 const YANDEX_FOLDER_ID = process.env.YANDEX_FOLDER_ID!;
 const YANDEX_KEY_JSON_PATH = process.env.YANDEX_KEY_JSON_PATH!;
@@ -43,17 +39,21 @@ const UPLOAD_PRESET = process.env.CLOUDINARY_UPLOAD_PRESET || 'bazarigo_image';
 const ADMIN_UID = process.env.ADMIN_UID || '';
 const GEL_TO_USD = Number(process.env.CURRENCY_RATE_GEL_TO_USD || 2.7);
 
-// Rate limits
+// Anahtar çifti oluştur (JWKS için)
+const { publicKey, privateKey } = generateKeyPairSync('rsa', {
+  modulusLength: 2048,
+  publicKeyEncoding: { type: 'spki', format: 'pem' },
+  privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
+});
+
 const rlTranslate = new RateLimiterMemory({ points: 60, duration: 60 });
 const rlModeration = new RateLimiterMemory({ points: 120, duration: 60 });
 const rlReports = new RateLimiterMemory({ points: 20, duration: 3600 });
 
-// Logging
 function logEvent(event: string, meta: Record<string, any> = {}) {
   console.log(JSON.stringify({ ts: new Date().toISOString(), event, ...meta }));
 }
 
-// Auth middleware
 async function requireAuth(req: any, res: any, next: any) {
   const hdr = req.headers.authorization || '';
   const token = hdr.startsWith('Bearer ') ? hdr.slice(7) : '';
@@ -67,12 +67,10 @@ async function requireAuth(req: any, res: any, next: any) {
   }
 }
 
-// Owner check
 function ensureOwner(uid: string, ownerId: string) {
   if (uid !== ownerId) throw new Error('forbidden_owner_mismatch');
 }
 
-// Language detection
 type Lang = 'ka' | 'ru' | 'en';
 function detectLanguage(text: string): Lang {
   const t = (text || '').trim();
@@ -81,7 +79,6 @@ function detectLanguage(text: string): Lang {
   return 'en';
 }
 
-// Moderation config loader
 let modConfig: any = null;
 let modHash = '';
 async function fetchJson(path: string) {
@@ -127,7 +124,6 @@ async function loadModerationConfig() {
 loadModerationConfig().catch(e => logEvent('moderation_config_load_failed', { error: String(e) }));
 setInterval(() => loadModerationConfig().catch(e => logEvent('moderation_config_load_failed', { error: String(e) })), 10 * 60 * 1000);
 
-// Text moderation engine
 function normalize(text: string) {
   return (text || '').toLowerCase().trim();
 }
@@ -173,18 +169,47 @@ function scoreText(text: string, lang: Lang, context: 'title' | 'description' | 
   return { score, reasons, blocks, decision, threshold };
 }
 
-// Yandex IAM token
+// ==================== JWKS ENDPOINT ====================
+app.get('/.well-known/jwks.json', (req, res) => {
+  const jwk = publicKey.export({ format: 'jwk' });
+  const jwks = {
+    keys: [{
+      kty: 'RSA',
+      use: 'sig',
+      kid: 'bazarigo-main-key',
+      alg: 'RS256',
+      n: jwk.n,
+      e: jwk.e
+    }]
+  };
+  res.json(jwks);
+});
+
+// ==================== SIGNED RESPONSE MIDDLEWARE ====================
+app.use((req, res, next) => {
+  const originalSend = res.send;
+  res.send = function(body) {
+    if (res.statusCode >= 200 && res.statusCode < 300) {
+      const payload = typeof body === 'string' ? body : JSON.stringify(body);
+      const signature = crypto.createSign('RSA-SHA256')
+        .update(payload)
+        .sign(privateKey, 'base64');
+      res.setHeader('X-Server-Signature', signature);
+      res.setHeader('X-Key-ID', 'bazarigo-main-key');
+    }
+    return originalSend.call(this, body);
+  };
+  next();
+});
+
+// ==================== YANDEX IAM TOKEN ====================
 let iamToken = '';
 let iamExpiresAt = 0;
 
 async function refreshYandexToken() {
-  console.log('🔍 KEY PATH:', YANDEX_KEY_JSON_PATH);
-  
   try {
     const keyRaw = await fs.readFile(YANDEX_KEY_JSON_PATH, 'utf8');
     const key = JSON.parse(keyRaw);
-    console.log('🔍 Service Account:', key.service_account_id);
-    
     const nowSec = Math.floor(Date.now() / 1000);
     const payload = {
       aud: 'https://iam.api.cloud.yandex.net/iam/v1/tokens',
@@ -192,35 +217,19 @@ async function refreshYandexToken() {
       iat: nowSec,
       exp: nowSec + 3600,
     };
-    
-    // JWT oluştur
     const signed = jwt.sign(payload, key.private_key, { algorithm: 'PS256', keyid: key.id });
-    console.log('🔍 JWT created, first 50 chars:', signed.substring(0, 50));
-    
-    // API isteği
-    console.log('🔍 Sending to Yandex API...');
     const resp = await fetch('https://iam.api.cloud.yandex.net/iam/v1/tokens', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ jwt: signed }),
     });
-    
-    console.log('🔍 API Status:', resp.status, resp.statusText);
-    const responseText = await resp.text();
-    console.log('🔍 API Response (first 300 chars):', responseText.substring(0, 300));
-    
-    if (!resp.ok) {
-      throw new Error(`Yandex API Error ${resp.status}: ${responseText}`);
-    }
-    
-    const data = JSON.parse(responseText);
+    if (!resp.ok) throw new Error(`Yandex API Error ${resp.status}: ${await resp.text()}`);
+    const data = await resp.json();
     iamToken = data.iamToken;
     iamExpiresAt = new Date(data.expiresAt).getTime();
-    console.log('✅✅ Token received, expires:', data.expiresAt);
     logEvent('yandex_iam_token_generated', { expiresAt: data.expiresAt });
-    
   } catch (error) {
-    console.error('❌❌ FULL ERROR:', error);
+    logEvent('yandex_token_refresh_failed', { error: String(error) });
     throw error;
   }
 }
@@ -232,12 +241,9 @@ async function getIamToken() {
   }
   return iamToken;
 }
-
-// Preload token + periodic refresh
 getIamToken().catch(e => logEvent('yandex_token_boot_failed', { error: String(e) }));
 setInterval(() => getIamToken().catch(e => logEvent('yandex_token_refresh_failed', { error: String(e) })), 10 * 60 * 1000);
 
-// Translation (Yandex via IAM token)
 async function yandexTranslate(text: string, source: Lang, target: Lang) {
   const token = await getIamToken();
   const resp = await fetch('https://translate.api.cloud.yandex.net/translate/v2/translate', {
@@ -255,11 +261,9 @@ async function yandexTranslate(text: string, source: Lang, target: Lang) {
   });
   if (!resp.ok) throw new Error('yandex_translate_failed');
   const data = await resp.json() as any;
-  const translated = data.translations?.[0]?.text || '';
-  return translated;
+  return data.translations?.[0]?.text || '';
 }
 
-// Firestore translation cache
 async function cacheTranslation(uid: string, text: string, source: Lang, target: Lang, translated: string) {
   const key = crypto.createHash('sha256').update(`${source}:${target}:${text}`).digest('hex');
   await db.collection('translations_cache').doc(key).set({
@@ -279,7 +283,6 @@ async function getCachedTranslation(text: string, source: Lang, target: Lang) {
   return null;
 }
 
-// Cloudinary signed upload
 function signUploadParams(folder: string, uid: string) {
   const timestamp = Math.floor(Date.now() / 1000);
   const params = {
@@ -292,9 +295,7 @@ function signUploadParams(folder: string, uid: string) {
   return { ...params, signature, api_key: process.env.CLOUDINARY_API_KEY };
 }
 
-// Endpoints
-
-// Health
+// ==================== ENDPOINTS ====================
 app.get('/health', async (req, res) => {
   try {
     const ttl = iamExpiresAt ? Math.floor((iamExpiresAt - Date.now()) / 1000) : -1;
@@ -304,18 +305,17 @@ app.get('/health', async (req, res) => {
       cloudinary: !!cloudinary.config().cloud_name,
       firestore: firebaseApp.name ? 'ok' : 'init',
       yandexTokenTTLsec: ttl,
+      jwksAvailable: true,
     });
   } catch (e) {
     res.status(500).json({ status: 'error', error: String(e) });
   }
 });
 
-// Version
 app.get('/version', (req, res) => {
   res.json({ moderationHash: modHash || 'n/a', build: process.env.RENDER_GIT_COMMIT || 'local' });
 });
 
-// Moderation (text)
 app.post('/moderation/text', requireAuth, async (req: any, res) => {
   try {
     await rlModeration.consume(req.ip);
@@ -330,7 +330,6 @@ app.post('/moderation/text', requireAuth, async (req: any, res) => {
   }
 });
 
-// Translate (single)
 app.post('/translate', requireAuth, async (req: any, res) => {
   try {
     await rlTranslate.consume(req.ip);
@@ -363,7 +362,6 @@ app.post('/translate', requireAuth, async (req: any, res) => {
   }
 });
 
-// Listings create
 app.post('/listings/create', requireAuth, async (req: any, res) => {
   try {
     const { title, description, category, price, condition, location } = req.body;
@@ -402,7 +400,6 @@ app.post('/listings/create', requireAuth, async (req: any, res) => {
   }
 });
 
-// Listings update
 app.patch('/listings/:id', requireAuth, async (req: any, res) => {
   try {
     const id = req.params.id;
@@ -444,7 +441,6 @@ app.patch('/listings/:id', requireAuth, async (req: any, res) => {
   }
 });
 
-// Reports
 app.post('/reports/create', requireAuth, async (req: any, res) => {
   try {
     await rlReports.consume(req.ip);
@@ -466,7 +462,6 @@ app.post('/reports/create', requireAuth, async (req: any, res) => {
   }
 });
 
-// Cloudinary signed upload
 app.post('/media/upload', requireAuth, async (req: any, res) => {
   try {
     const { listingId } = req.body;
@@ -482,7 +477,6 @@ app.post('/media/upload', requireAuth, async (req: any, res) => {
   }
 });
 
-// Cloudinary webhook
 app.post('/media/webhook', async (req, res) => {
   try {
     const payload = req.body;
@@ -504,7 +498,6 @@ app.post('/media/webhook', async (req, res) => {
   }
 });
 
-// Warm-up
 async function warmUp() {
   try {
     await loadModerationConfig();
@@ -516,10 +509,8 @@ async function warmUp() {
 }
 warmUp();
 
-// Start server
 const port = Number(process.env.PORT || 10000);
 app.listen(port, () => {
   console.log(`🚀 Server started on port ${port}`);
   logEvent('server_started', { port });
 });
-
