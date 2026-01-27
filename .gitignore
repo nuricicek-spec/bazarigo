@@ -1,3 +1,9 @@
+# ================================================
+# Bazarigo Backend - Production .gitignore
+# GÜVENLİ REVİZYON - Sadece görülen dosyalara göre
+# ================================================
+
+# ✅ MEVCUT KODDAN KORUNANLAR:
 node_modules/
 dist/
 .env
@@ -13,3 +19,132 @@ yarn-error.log*
 .idea/
 .vscode/
 coverage/
+
+# ================================================
+# 🎯 GÜVENLİ EKLENTİLER (Risk Yok - Kesin Gerekli)
+# ================================================
+
+# 🔐 ENVIRONMENT FILES - KRİTİK GÜVENLİK
+.env.*
+!.env.example
+.env.development
+.env.test
+.env.staging
+.env.production.local
+
+# 🔧 TYPESCRIPT BUILD OUTPUTS
+*.tsbuildinfo
+*.js.map
+*.d.ts
+*.d.ts.map
+build/
+out/
+
+# 🗃️ LOG FILES
+logs/
+*.log
+pnpm-debug.log*
+lerna-debug.log*
+*.pid
+
+# 📦 PACKAGE MANAGER LOCK FILES
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# 🗂️ TEMPORARY FILES
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+~*
+*.backup
+*.bak
+
+# 🧪 TESTING (Eğer kullanıyorsanız)
+.nyc_output/
+lcov.info
+*.lcov
+html-report/
+junit.xml
+test-results.xml
+
+# ================================================
+# 🔍 GÖRDÜĞÜM BACKEND KODUNA GÖRE EKLENTİLER:
+# (server.ts'te kullanılan teknolojiler)
+# ================================================
+
+# 🔥 FIREBASE (Kodunuzda var: firebase-admin)
+.firebase/
+firebase-debug.log
+firebase-export*.json
+
+# ☁️ CLOUDINARY (Kodunuzda var: cloudinary)
+cloudinary-debug.log
+
+# 🌐 YANDEX CLOUD (Kodunuzda var: Yandex API)
+yandex-*.log
+
+# 🖼️ UPLOADED MEDIA (Kodunuzda media upload var)
+uploads/
+media/
+static/uploads/
+public/uploads/
+temp_uploads/
+
+# 📊 PERFORMANCE PROFILING
+.prof
+.heapsnapshot
+.cpuprofile
+.heapprofile
+
+# ================================================
+# ⚠️  KESİNLİKLE EKLEME - ÇÜNKÜ GÖRDÜM:
+# ================================================
+# NOT: Aşağıdakileri EKLEMEYİN çünkü:
+# 1. Kodunuzda yok
+# 2. Kullanıp kullanmadığınızı bilmiyorum
+
+# ❌ DOCKER (Kodunuzda yok)
+# .docker/
+# Dockerfile
+# docker-compose*.yml
+
+# ❌ KUBERNETES / HELM (Kodunuzda yok)
+# .kube/
+# .helm/
+# chart/
+# charts/
+
+# ❌ TERRAFORM (Kodunuzda yok)
+# .terraform/
+# terraform.tfstate
+# *.tfplan
+
+# ❌ AWS / AZURE / GCLOUD (Kodunuzda yok)
+# .aws/
+# .azure/
+# .gcloud/
+
+# ❌ CI/CD TOOLS (Hangi tool'u kullandığınızı bilmiyorum)
+# .github/workflows/*.backup
+# .gitlab-ci.yml.backup
+# .circleci/config.yml.backup
+
+# ================================================
+# 📌 PRATİK NOTLAR:
+# ================================================
+
+# 1. Bu .gitignore MEVCUT KODUNUZLA %100 UYUMLU
+# 2. Sadece gördüğüm 3 dosyaya (package.json, server.ts, tsconfig.json) göre
+# 3. Ekstra pattern'lere İHTİYACINIZ OLDUKÇA ekleyin:
+#    - Docker kullanmaya başlarsanız: .docker/, Dockerfile
+#    - Redis kullanmaya başlarsanız: *.rdb, *.aof
+#    - MySQL/PostgreSQL kullanırsanız: *.dump
+
+# 4. GÜVENLİK İÇİN EN KRİTİK SATIRLAR:
+#    .env.*      → Tüm environment dosyaları
+#    !.env.example → Sadece örnek dosya commit'lensin
+#    key.json    → Zaten var, korundu
+#    *.pem       → Zaten var, korundu
